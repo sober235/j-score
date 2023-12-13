@@ -1,0 +1,86 @@
+# coding=utf-8
+# Copyright 2020 The Google Research Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Lint as: python3
+"""Training NCSN++ on Church with VE SDE."""
+
+from configs.default_fastMRI_configs import get_default_configs # 先将get_default_configs内部的变量初始化
+
+
+def get_config():
+  config = get_default_configs()
+  # training
+  training = config.training
+  training.sde = 'vesde'
+  training.continuous = True
+  training.reduce_mean = True
+  training.mask_type = 'low_frequency' # low_frequency, uniform, center or cartesian 
+  training.acc = 'None'
+  training.acs = '18'
+  training.mean_equal = 'noequal' # equal or noequal
+  
+  # sampling
+  sampling = config.sampling
+  sampling.batch_size = 1
+  sampling.method = 'pc'
+  sampling.predictor = 'reverse_diffusion'
+  sampling.corrector = 'langevin'
+  sampling.folder = '2022_10_16T17_12_15_ncsnpp_vesde_N_200'
+  sampling.ckpt = 1
+  sampling.mask_type = 'uniform' # uniform, random_uniform or center
+  sampling.acc = '8'
+  sampling.acs = '18'
+  sampling.fft = 'nofft' # fft or nofft
+  sampling.snr = 0.075 ##### 0.16, 加速采样用0.26会比较好: snr调小可以抑制噪声，容易产生伪影；调大可以抑制伪影，噪声过大
+  sampling.mse = 2.5 ##### predictor_mse
+  sampling.corrector_mse = 5. ###
+  sampling.datashift = 'knee' ### head or knee
+
+  # data
+  data = config.data
+  data.centered = False
+  data.dataset_name = 'fastMRI_knee'
+  data.image_size = 320
+  data.normalize_type = 'std' # minmax or std
+  data.normalize_coeff = 1.5 # normalize coefficient
+
+  # model
+  model = config.model
+  model.name = 'ncsnpp'
+  model.dropout = 0.
+  model.sigma_max = 348
+  model.scale_by_sigma = True
+  model.ema_rate = 0.999
+  model.normalization = 'GroupNorm'
+  model.nonlinearity = 'swish'
+  model.nf = 128
+  model.ch_mult = (1, 1, 2, 2, 2, 2, 2)
+  model.num_res_blocks = 2
+  model.attn_resolutions = (16,)
+  model.resamp_with_conv = True
+  model.conditional = True
+  model.fir = True
+  model.fir_kernel = [1, 3, 3, 1]
+  model.skip_rescale = True
+  model.resblock_type = 'biggan'
+  model.progressive = 'output_skip'
+  model.progressive_input = 'input_skip'
+  model.progressive_combine = 'sum'
+  model.attention_type = 'ddpm'
+  model.init_scale = 0.
+  model.fourier_scale = 16
+  model.conv_size = 3
+
+  return config
