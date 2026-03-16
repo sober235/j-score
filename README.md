@@ -205,7 +205,7 @@ If you find the code useful for your research, please consider citing:
 }
 ```
 
-Our implementation is based on [Score-based SDE](https://github.com/yang-song/score_sde_pytorch) by Dr. Yang Song. We also referenced the [HFS-SDE](https://github.com/Aboriginer/HFS-SDE) codebase by Chentao Cao et al. Thanks for their great works!
+Our implementation is based on [Score-based SDE](https://github.com/yang-song/score_sde_pytorch) by Dr. Yang Song. Thanks for the great work!
 
 ## Questions
 
