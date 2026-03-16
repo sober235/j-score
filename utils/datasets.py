@@ -124,57 +124,12 @@ class T1rhoDataSet_h5(Dataset):
         return self.kspace.shape[0]
 
 
-class T1rhoDataSet_h5_5T(Dataset):
-    def __init__(self, config, mode):
-        super().__init__()
-        self.config = config
-        if mode == 'train':
-            self.kspace_file = _require_env_path('T1RHO_5T_TRAIN_KSPACE_FILE', 'T1rho 5T training k-space file')
-            self.maps_file = _require_env_path('T1RHO_5T_TRAIN_MAPS_FILE', 'T1rho 5T training sensitivity map file')
-        elif mode == 'sample':
-            self.kspace_file = _require_env_path('T1RHO_5T_SAMPLE_KSPACE_FILE', 'T1rho 5T sampling k-space file')
-            self.maps_file = _require_env_path('T1RHO_5T_SAMPLE_MAPS_FILE', 'T1rho 5T sampling sensitivity map file')
-        else:
-            raise NotImplementedError
-
-        self.mode = mode
-        if self.mode != 'sample':
-            with h5py.File(self.kspace_file, 'r') as data:
-                self.kspace = np.array(data['kspace'])
-                self.kspace = np.transpose(self.kspace, [2, 3, 4, 0, 1])
-        else:
-            with h5py.File(self.kspace_file, 'r') as data:
-                self.kspace = np.array(data['h_kspce'])
-                self.kspace = np.transpose(self.kspace, [2, 3, 4, 0, 1])
-
-        if self.mode != 'sample':
-            with h5py.File(self.maps_file, 'r') as data:
-                self.maps = np.array(data['maps'])
-        else:
-            with h5py.File(self.maps_file, 'r') as data:
-                self.maps = np.array(data['csm_cor'])
-                self.maps = np.transpose(self.maps, [2, 3, 4, 0, 1])
-
-    def __getitem__(self, index):
-        kspace = IFFT2c(self.kspace[index])
-        kspace = crop(kspace, 192, 192)
-        kspace = FFT2c(kspace)
-        kspace = kspace / (1.5 * np.std(kspace))
-        maps = crop(torch.from_numpy(self.maps[index]), 192, 192)
-        return torch.from_numpy(kspace), maps
-
-    def __len__(self):
-        return self.kspace.shape[0]
-
-
 def get_dataset(config, mode):
     print('Dataset name:', config.data.dataset_name)
     if config.data.dataset_name == 'fastMRI_knee':
         dataset = FastMRIKneeDataSet(config, mode)
     elif config.data.dataset_name == 't1rho':
         dataset = T1rhoDataSet_h5(config, mode)
-    elif config.data.dataset_name == 't1rho_5T':
-        dataset = T1rhoDataSet_h5_5T(config, mode)
     else:
         raise ValueError(f"Unknown dataset: {config.data.dataset_name}")
 
