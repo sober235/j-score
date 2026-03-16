@@ -80,7 +80,6 @@ class UpFirDn2dBackward(Function):
             ctx.pad_y0,
             ctx.pad_y1,
         )
-        # gradgrad_out = gradgrad_out.view(ctx.in_size[0], ctx.out_size[0], ctx.out_size[1], ctx.in_size[3])
         gradgrad_out = gradgrad_out.view(
             ctx.in_size[0], ctx.in_size[1], ctx.out_size[0], ctx.out_size[1]
         )
@@ -121,7 +120,6 @@ class UpFirDn2d(Function):
         out = upfirdn2d_op.upfirdn2d(
             input, kernel, up_x, up_y, down_x, down_y, pad_x0, pad_x1, pad_y0, pad_y1
         )
-        # out = out.view(major, out_h, out_w, minor)
         out = out.view(-1, channel, out_h, out_w)
 
         return out

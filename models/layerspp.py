@@ -38,7 +38,7 @@ class GaussianFourierProjection(nn.Module):
                                * scale, requires_grad=False)
 
     def forward(self, x):
-        x_proj = x[:, None] * self.W[None, :] * 2 * np.pi # x*w*2π
+        x_proj = x[:, None] * self.W[None, :] * 2 * np.pi
         return torch.cat([torch.sin(x_proj), torch.cos(x_proj)], dim=-1)
 
 
@@ -269,7 +269,6 @@ class ResnetBlockBigGANpp(nn.Module):
                 x = up_or_down_sampling.naive_downsample_2d(x, factor=2)
 
         h = self.Conv_0(h)
-        # Add bias to each feature map conditioned on the time embedding
         if temb is not None:
             h += self.Dense_0(self.act(temb))[:, :, None, None]
         h = self.act(self.GroupNorm_1(h))

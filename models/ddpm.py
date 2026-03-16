@@ -58,7 +58,6 @@ class DDPM(nn.Module):
         ResnetBlock = functools.partial(
             ResnetBlockDDPM, act=act, temb_dim=4 * nf, dropout=dropout)
         if conditional:
-            # Condition on noise levels.
             modules = [nn.Linear(nf, nf * 4)]
             modules[0].weight.data = default_initializer()(
                 modules[0].weight.data.shape)
@@ -71,12 +70,10 @@ class DDPM(nn.Module):
         self.centered = config.data.centered
         channels = config.data.num_channels
 
-        # Downsampling block
         modules.append(conv3x3(channels, nf))
         hs_c = [nf]
         in_ch = nf
         for i_level in range(num_resolutions):
-            # Residual blocks for this resolution
             for i_block in range(num_res_blocks):
                 out_ch = nf * ch_mult[i_level]
                 modules.append(ResnetBlock(in_ch=in_ch, out_ch=out_ch))
@@ -94,7 +91,6 @@ class DDPM(nn.Module):
         modules.append(AttnBlock(channels=in_ch))
         modules.append(ResnetBlock(in_ch=in_ch))
 
-        # Upsampling block
         for i_level in reversed(range(num_resolutions)):
             for i_block in range(num_res_blocks + 1):
                 out_ch = nf * ch_mult[i_level]
@@ -119,7 +115,6 @@ class DDPM(nn.Module):
         modules = self.all_modules
         m_idx = 0
         if self.conditional:
-            # timestep/scale embedding
             timesteps = labels
             temb = layers.get_timestep_embedding(timesteps, self.nf)
             temb = modules[m_idx](temb)
@@ -130,17 +125,13 @@ class DDPM(nn.Module):
             temb = None
 
         if self.centered:
-            # Input is in [-1, 1]
             h = x
         else:
-            # Input is in [0, 1]
             h = 2 * x - 1.
 
-        # Downsampling block
         hs = [modules[m_idx](h)]
         m_idx += 1
         for i_level in range(self.num_resolutions):
-            # Residual blocks for this resolution
             for i_block in range(self.num_res_blocks):
                 h = modules[m_idx](hs[-1], temb)
                 m_idx += 1
@@ -160,7 +151,6 @@ class DDPM(nn.Module):
         h = modules[m_idx](h, temb)
         m_idx += 1
 
-        # Upsampling block
         for i_level in reversed(range(self.num_resolutions)):
             for i_block in range(self.num_res_blocks + 1):
                 h = modules[m_idx](torch.cat([h, hs.pop()], dim=1), temb)
@@ -180,9 +170,6 @@ class DDPM(nn.Module):
         assert m_idx == len(modules)
 
         if self.scale_by_sigma:
-            # Divide the output by sigmas. Useful for training with the NCSN loss.
-            # The DDPM loss scales the network output by sigma in the loss function,
-            # so no need of doing it here.
             used_sigmas = self.sigmas[labels, None, None, None]
             h = h / used_sigmas
 

@@ -64,7 +64,6 @@ def get_sigmas(config):
 def get_ddpm_params(config):
     """Get betas and alphas --- parameters used in the original DDPM paper."""
     num_diffusion_timesteps = 1000
-    # parameters need to be adapted if number of time steps differs from 1000
     beta_start = config.model.beta_min / config.model.num_scales
     beta_end = config.model.beta_max / config.model.num_scales
     betas = np.linspace(beta_start, beta_end,
@@ -89,9 +88,8 @@ def get_ddpm_params(config):
 
 def create_model(config):
     """Create the score model."""
-    model_name = config.model.name # 输入模型名字 'ncsnpp'
-    # score_model = DDPM(config)   
-    score_model = get_model(model_name)(config) # 配置文件中给出使用“ncsnpp”网络
+    model_name = config.model.name
+    score_model = get_model(model_name)(config)
     score_model = score_model.to(config.device)
     return score_model
 
@@ -107,11 +105,11 @@ def get_model_fn(model, train=False):
       A model function.
     """
 
-    def model_fn(x, labels): # 扰动后数据，index
+    def model_fn(x, labels):
         """Compute the output of the score-based model.
 
         Args:
-          x: A mini-batch of input data. 
+          x: A mini-batch of input data.
           labels: A mini-batch of conditioning variables for time steps. Should be interpreted differently
             for different models.
 
@@ -120,15 +118,15 @@ def get_model_fn(model, train=False):
         """
         if not train:
             model.eval()
-            return model(x, labels) # 扰动数据，index
+            return model(x, labels)
         else:
             model.train()
-            return model(x, labels) # 扰动数据，index
+            return model(x, labels)
 
     return model_fn
 
 
-def get_score_fn(sde, model, train=False, continuous=False): 
+def get_score_fn(sde, model, train=False, continuous=False):
     """Wraps `score_fn` so that the model output corresponds to a real time-dependent score function.
 
     Args:
@@ -142,17 +140,16 @@ def get_score_fn(sde, model, train=False, continuous=False):
     """
     model_fn = get_model_fn(model, train=train)
 
-    def score_fn(x, t): # 输入扰动后数据，index
+    def score_fn(x, t):
         if continuous:
-            labels = sde.marginal_prob(torch.zeros_like(x), t)[1] # return mean & std
+            labels = sde.marginal_prob(torch.zeros_like(x), t)[1]
             print('time_step:', labels)
         else:
-            # For VE-trained models, t=0 corresponds to the highest noise level
             labels = sde.T - t
             labels *= sde.N - 1
             labels = torch.round(labels).long()
 
-        score = model_fn(x, labels)  # perturbed data, 
+        score = model_fn(x, labels)
         return score
 
     return score_fn

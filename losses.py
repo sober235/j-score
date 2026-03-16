@@ -69,10 +69,7 @@ def get_sde_loss_fn(config, sde, train, reduce_mean=True, continuous=True, likel
     Returns:
       A loss function.
     """
-    # running logic: 如果reduce_mean为True, 则reduce_op = torch.mean,  否则：reduce_op = lambda函数
-    reduce_op = torch.mean if reduce_mean else lambda *args, **kwargs: 0.5 * torch.sum(*args, **kwargs) 
-    
-    # mask = get_mask(config, 'sde') 
+    reduce_op = torch.mean if reduce_mean else lambda *args, **kwargs: 0.5 * torch.sum(*args, **kwargs)
 
     def loss_fn(model, batch):
         """Compute the loss function.
@@ -85,21 +82,16 @@ def get_sde_loss_fn(config, sde, train, reduce_mean=True, continuous=True, likel
           loss: A scalar that represents the average loss value across the mini-batch.
         """
         score_fn = mutils.get_score_fn(sde, model, train=train, continuous=continuous)
-        t = torch.rand(batch.shape[0], device=batch.device) * (sde.T - eps) + eps # sde.T = 1, 输出单个标量
-        # z is Gaussian noise and represents the log gradient in the model
-        z = torch.randn_like(batch) # 4x2x240x200     在T1rho中为1x8x240x200, 生成和batch维度相同的服从
+        t = torch.rand(batch.shape[0], device=batch.device) * (sde.T - eps) + eps
+        z = torch.randn_like(batch)
 
-        mean, std = sde.marginal_prob(batch, t) # 1x2x320x320   T1rho应该变成1x8x240x200           这里可以看成p（x|y_t）???，下一步采样出x_t ???
-        perturbed_data = mean + std[:, None, None, None] * z # 这里利用了参数重整化，
-        # i += 1
-        # if i/100==0: 
-        #     perturbed_data = r2c(perturbed_data)
-        #     save_mat('.', perturbed_data, 'perturbed_data', i, True)    
-        score = score_fn(perturbed_data, t) # 1x2x320x320
+        mean, std = sde.marginal_prob(batch, t)
+        perturbed_data = mean + std[:, None, None, None] * z
+        score = score_fn(perturbed_data, t)
 
         if not likelihood_weighting:
-            losses = torch.square(score * std[:, None, None, None] + z) # 对应T1rho是1x8x240x200 
-            losses = reduce_op(losses.reshape(losses.shape[0], -1), dim=-1) # 
+            losses = torch.square(score * std[:, None, None, None] + z)
+            losses = reduce_op(losses.reshape(losses.shape[0], -1), dim=-1)
         else:
             g2 = sde.sde(torch.zeros_like(batch), t)[1] ** 2
             losses = torch.square(score + z / std[:, None, None, None])
@@ -112,24 +104,23 @@ def get_sde_loss_fn(config, sde, train, reduce_mean=True, continuous=True, likel
     return loss_fn
 
 
-def get_smld_loss_fn(vesde, train, reduce_mean=False): # 离散
+def get_smld_loss_fn(vesde, train, reduce_mean=False):
     """Legacy code to reproduce previous results on SMLD(NCSN). Not recommended for new work."""
     assert isinstance(vesde, VESDE), "SMLD training only works for VESDEs."
 
-    # Previous SMLD models assume descending sigmas
     smld_sigma_array = torch.flip(vesde.discrete_sigmas, dims=(0,))
     reduce_op = torch.mean if reduce_mean else lambda *args, **kwargs: 0.5 * torch.sum(*args, **kwargs)
 
-    def loss_fn(model, batch): # model：模型输出结果； batch：合并后的单张图像
-        model_fn = mutils.get_model_fn(model, train=train) # model：
-        labels = torch.randint( 0, vesde.N, (batch.shape[0],), device=batch.device) # 返回一个张量，该张量填充了在低和高之间均匀生成的随机整数, vesde.N=200->配置文件输入
+    def loss_fn(model, batch):
+        model_fn = mutils.get_model_fn(model, train=train)
+        labels = torch.randint(0, vesde.N, (batch.shape[0],), device=batch.device)
         sigmas = smld_sigma_array.to(batch.device)[labels]
 
-        noise = torch.randn_like(batch) * sigmas[:, None, None, None] # randn_like返回标准正态分布，尺寸为括号中的数字， [0, I] * used_sigmas
+        noise = torch.randn_like(batch) * sigmas[:, None, None, None]
 
         perturbed_data = noise + batch 
 
-        score = model_fn(perturbed_data, labels) # 扰动后的数据，index
+        score = model_fn(perturbed_data, labels)
         target = -noise / (sigmas ** 2)[:, None, None, None]
         losses = torch.square(score - target)
         losses = reduce_op(losses.reshape(losses.shape[0], -1), dim=-1) * sigmas ** 2
@@ -140,7 +131,7 @@ def get_smld_loss_fn(vesde, train, reduce_mean=False): # 离散
     
 
 
-def get_ddpm_loss_fn(vpsde, train, reduce_mean=True): # 离散
+def get_ddpm_loss_fn(vpsde, train, reduce_mean=True):
     """Legacy code to reproduce previous results on DDPM. Not recommended for new work."""
     assert isinstance(vpsde, VPSDE), "DDPM training only works for VPSDEs."
 
@@ -179,15 +170,15 @@ def get_step_fn(config, sde, train, optimize_fn=None, reduce_mean=False, continu
     Returns:
       A one-step function for training or evaluation.
     """
-    if continuous: # sde
+    if continuous:
         loss_fn = get_sde_loss_fn(config, sde, train, reduce_mean=reduce_mean,
                                   continuous=True, likelihood_weighting=likelihood_weighting)
     else:
         assert not likelihood_weighting, "Likelihood weighting is not supported for original SMLD/DDPM training."
-        if isinstance(sde, VESDE): # 判断输入实例化sde是否和输入VESDE实例化一致
-            loss_fn = get_smld_loss_fn(sde, train, reduce_mean = reduce_mean)  # score-based 郎之万动力学
+        if isinstance(sde, VESDE):
+            loss_fn = get_smld_loss_fn(sde, train, reduce_mean=reduce_mean)
         elif isinstance(sde, VPSDE):
-            loss_fn = get_ddpm_loss_fn(sde, train, reduce_mean = reduce_mean)
+            loss_fn = get_ddpm_loss_fn(sde, train, reduce_mean=reduce_mean)
         else:
             raise ValueError(
                 f"Discrete training for {sde.__class__.__name__} is not recommended.")
@@ -206,11 +197,11 @@ def get_step_fn(config, sde, train, optimize_fn=None, reduce_mean=False, continu
         Returns:
           loss: The average loss value of this state.
         """
-        model = state['model'] # 网络的模型赋值
+        model = state['model']
         if train:
             optimizer = state['optimizer']
             optimizer.zero_grad()
-            loss = loss_fn(model, batch) # 1x2x320x320
+            loss = loss_fn(model, batch)
             loss.backward()
             optimize_fn(optimizer, model.parameters(), step=state['step'])
             state['step'] += 1

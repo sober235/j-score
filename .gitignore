@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.so
+*.o
+*.a
+*.mat
+!configs/*.mat
+results/
+*.log
+.vscode/
+.DS_Store

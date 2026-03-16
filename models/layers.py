@@ -127,12 +127,6 @@ def ddpm_conv3x3(in_planes, out_planes, stride=1, bias=True, dilation=1, init_sc
     nn.init.zeros_(conv.bias)
     return conv
 
-    ###########################################################################
-    # Functions below are ported over from the NCSNv1/NCSNv2 codebase:
-    # https://github.com/ermongroup/ncsn
-    # https://github.com/ermongroup/ncsnv2
-    ###########################################################################
-
 
 class CRPBlock(nn.Module):
     def __init__(self, features, n_stages, act=nn.ReLU(), maxpool=True):
@@ -511,7 +505,6 @@ class ResidualBlock(nn.Module):
                 self.conv2 = ncsn_conv3x3(
                     output_dim, output_dim, dilation=dilation)
             else:
-                # conv_shortcut = nn.Conv2d ### Something wierd here.
                 conv_shortcut = partial(ncsn_conv1x1)
                 self.conv1 = ncsn_conv3x3(input_dim, output_dim)
                 self.normalize2 = normalization(output_dim)
@@ -540,21 +533,18 @@ class ResidualBlock(nn.Module):
         return shortcut + output
 
 
-###########################################################################
 # Functions below are ported over from the DDPM codebase:
 #  https://github.com/hojonathanho/diffusion/blob/master/diffusion_tf/nn.py
-###########################################################################
 
 def get_timestep_embedding(timesteps, embedding_dim, max_positions=10000):
-    assert len(timesteps.shape) == 1  # and timesteps.dtype == tf.int32
+    assert len(timesteps.shape) == 1
     half_dim = embedding_dim // 2
-    # magic number 10000 is from transformers
     emb = math.log(max_positions) / (half_dim - 1)
     emb = torch.exp(torch.arange(half_dim, dtype=torch.float32,
                     device=timesteps.device) * -emb)
     emb = timesteps.float()[:, None] * emb[None, :]
     emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=1)
-    if embedding_dim % 2 == 1:  # zero pad
+    if embedding_dim % 2 == 1:
         emb = F.pad(emb, (0, 1), mode='constant')
     assert emb.shape == (timesteps.shape[0], embedding_dim)
     return emb
@@ -570,7 +560,7 @@ def contract_inner(x, y):
     x_chars = list(string.ascii_lowercase[:len(x.shape)])
     y_chars = list(string.ascii_lowercase[len(
         x.shape):len(y.shape) + len(x.shape)])
-    y_chars[0] = x_chars[-1]  # first axis of y and last of x get summed
+    y_chars[0] = x_chars[-1]
     out_chars = x_chars[:-1] + y_chars[1:]
     return _einsum(x_chars, y_chars, out_chars, x, y)
 
@@ -640,7 +630,6 @@ class Downsample(nn.Module):
 
     def forward(self, x):
         B, C, H, W = x.shape
-        # Emulate 'SAME' padding
         if self.with_conv:
             x = F.pad(x, (0, 1, 0, 1))
             x = self.Conv_0(x)
@@ -686,7 +675,6 @@ class ResnetBlockDDPM(nn.Module):
         out_ch = self.out_ch if self.out_ch else self.in_ch
         h = self.act(self.GroupNorm_0(x))
         h = self.Conv_0(h)
-        # Add bias to each feature map conditioned on the time embedding
         if temb is not None:
             h += self.Dense_0(self.act(temb))[:, :, None, None]
         h = self.act(self.GroupNorm_1(h))

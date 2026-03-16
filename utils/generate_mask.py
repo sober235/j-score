@@ -1,61 +1,55 @@
 import os
 import sys
-import torch
+
 import numpy as np
 import scipy.io as scio
+import torch
 from numpy.lib.stride_tricks import as_strided
 
 
+DEFAULT_MASK_DIR = os.environ.get('MASK_OUTPUT_DIR', 'mask')
+
+
 def normal_pdf(length, sensitivity):
-    return np.exp(-sensitivity * (np.arange(length) - length / 2)**2)
+    return np.exp(-sensitivity * (np.arange(length) - length / 2) ** 2)
 
 
-def cartesian_mask(shape, acc, sample_n):
-    """
-    Sampling density estimated from implementation of kt FOCUSS
-    shape: tuple - of form (..., nx, ny)
-    acc: float - doesn't have to be integer 4, 8, etc..
-    """
-    N, Nx, Ny = int(np.prod(shape[:-2])), shape[-2], shape[-1]
-    pdf_x = normal_pdf(Nx, 0.5/(Nx/10.)**2)
-    lmda = Nx/(2.*acc)
-    n_lines = int(Nx / acc)
+def gaussian_random_mask(shape, acc, sample_n):
+    """Create a Gaussian-random Cartesian mask."""
+    n, nx, ny = int(np.prod(shape[:-2])), shape[-2], shape[-1]
+    pdf_x = normal_pdf(nx, 0.5 / (nx / 10.0) ** 2)
+    lam = nx / (2.0 * acc)
+    n_lines = int(nx / acc)
 
-    # add uniform distribution
-    pdf_x += lmda * 1./Nx
-
+    pdf_x += lam / nx
     if sample_n:
-        pdf_x[Nx//2-sample_n//2:Nx//2+sample_n//2] = 0
+        pdf_x[nx // 2 - sample_n // 2:nx // 2 + sample_n // 2] = 0
         pdf_x /= np.sum(pdf_x)
         n_lines -= sample_n
 
-    mask = np.zeros((N, Nx))
-    for i in range(N):
-        idx = np.random.choice(Nx, n_lines, False, pdf_x)
+    mask = np.zeros((n, nx))
+    for i in range(n):
+        idx = np.random.choice(nx, n_lines, False, pdf_x)
         mask[i, idx] = 1
 
     if sample_n:
-        mask[:, Nx//2-sample_n//2:Nx//2+sample_n//2] = 1
+        mask[:, nx // 2 - sample_n // 2:nx // 2 + sample_n // 2] = 1
 
     size = mask.itemsize
-    mask = as_strided(mask, (N, Nx, Ny), (size * Nx, size, 0))
+    mask = as_strided(mask, (n, nx, ny), (size * nx, size, 0))
+    return mask.reshape(shape)
 
-    mask = mask.reshape(shape)
 
-    return mask
+def _save_mask(filename, mask):
+    os.makedirs(DEFAULT_MASK_DIR, exist_ok=True)
+    scio.savemat(os.path.join(DEFAULT_MASK_DIR, filename), {'mask': np.squeeze(mask)})
 
 
 def get_blur_mask(image_size, rate):
     mask = torch.zeros([1, 1, image_size, image_size], dtype=torch.complex128)
     x_start = torch.div(image_size, 2 * rate, rounding_mode='floor')
     x_end = image_size - x_start
-    mask[:, :, x_start:x_end, x_start:x_end] = 1.
-
-    mask_result_file = os.path.join(
-        'mask', 'center_acc' + str(rate) + '.mat')
-    mask_datadict = {'mask': np.squeeze(mask.numpy())}
-    scio.savemat(mask_result_file, mask_datadict)
-    
+    mask[:, :, x_start:x_end, x_start:x_end] = 1.0
     return mask
 
 
@@ -63,77 +57,50 @@ def get_uniform_random_mask(image_size, acc, acs_lines=18):
     center_line_idx = np.arange((image_size - acs_lines) // 2, (image_size + acs_lines) // 2)
     outer_line_idx = np.setdiff1d(np.arange(image_size), center_line_idx)
     np.random.shuffle(outer_line_idx)
-    print(outer_line_idx)
 
     lines_num = int(image_size / acc) - acs_lines
-    random_line_idx = outer_line_idx[0:lines_num]
-    print(random_line_idx)
+    random_line_idx = outer_line_idx[:lines_num]
 
-    mask = np.zeros((image_size))
-    mask[center_line_idx] = 1.
-    mask[random_line_idx] = 1.
-
+    mask = np.zeros((image_size,))
+    mask[center_line_idx] = 1.0
+    mask[random_line_idx] = 1.0
     mask = np.repeat(mask[np.newaxis, :], image_size, axis=0)
 
-    mask_result_file = os.path.join(
-            '/data/data42/LiuCongcong/T1rho/code/DiffusionModel_jd_t1rho/mask', 'random_uniform_acc_v5_DGM' + str(acc) + '_acs' + str(acs_lines) + '.mat')
-    mask_datadict = {'mask': np.squeeze(mask)}
-    scio.savemat(mask_result_file, mask_datadict)
+    filename = f'random_uniform_acc{acc}_DGM_acs{acs_lines}.mat'
+    _save_mask(filename, mask)
+    return mask
 
 
 def get_equispaced_mask(mask_type, acc, acs_lines=16, total_lines=320):
-    center_line_idx = np.arange(
-        (total_lines - acs_lines) // 2, (total_lines + acs_lines) // 2)
+    center_line_idx = np.arange((total_lines - acs_lines) // 2, (total_lines + acs_lines) // 2)
     outer_line_idx = np.setdiff1d(np.arange(total_lines), center_line_idx)
-
     random_line_idx = outer_line_idx[::acc]
-    print(random_line_idx)
 
-    mask = np.zeros((total_lines))
-    mask[center_line_idx] = 1.
-    if mask_type == 'low_frequency':
-        mask[random_line_idx] = 0.
-    else:
-        mask[random_line_idx] = 1.
-
+    mask = np.zeros((total_lines,))
+    mask[center_line_idx] = 1.0
+    mask[random_line_idx] = 0.0 if mask_type == 'low_frequency' else 1.0
     mask = np.repeat(mask[np.newaxis, :], total_lines, axis=0)
-    if mask_type == 'low_frequency':
-        mask_result_file = os.path.join(
-            'mask', 'low_frequency_acs' + str(acs_lines) + '.mat')
-    else:
-        mask_result_file = os.path.join(
-            'mask', 'uniform_acc' + str(acc) + '_acs' + str(acs_lines) + '.mat')
-    mask_datadict = {'mask': np.squeeze(mask)}
-    scio.savemat(mask_result_file, mask_datadict)
 
+    if mask_type == 'low_frequency':
+        filename = f'low_frequency_acs{acs_lines}.mat'
+    else:
+        filename = f'uniform_acc{acc}_acs{acs_lines}.mat'
+    _save_mask(filename, mask)
     return mask
 
 
 def get_cartesian_mask(acc, acs_lines=24, image_size=320):
     shape = (1, image_size, image_size)
-    mask = cartesian_mask(shape, acc, sample_n=acs_lines)
+    mask = gaussian_random_mask(shape, acc, sample_n=acs_lines)
     mask = np.transpose(mask, (0, 2, 1))
-
-    mask_result_file = os.path.join(
-        '/data/data42/LiuCongcong/T1rho/code/DiffusionModel_jd_t1rho/mask', 'uniform_random_acc_v2_' + str(acc) + '_acs_lines_v3_' + str(acs_lines) +  '.mat')
-    # mask_result_file = os.path.join(
-    #     'mask', 'cartesian_acc' + str(acc) + '.mat')
-    mask_datadict = {'mask': np.squeeze(mask)}
-    scio.savemat(mask_result_file, mask_datadict)
+    _save_mask(f'uniform_random_dgm_acc{acc}_acs{acs_lines}.mat', mask)
     print('generate cartesian mask, acc =', acc)
+    return mask
 
 
 def main():
-    # for acc in range(4, 12):
-    #     if  acc % 2 == 0:
-    #         # get_cartesian_mask(acc, acs_lines=16, image_size=368)
-    #         get_equispaced_mask('uniform', acc, acs_lines=16, total_lines=320)
-    # get_equispaced_mask('low_frequency', 16, acs_lines=100, total_lines=320)
-    # get_equispaced_mask('uniform', 20, acs_lines=18, total_lines=320)
-    # get_blur_mask(320, 2)
+    get_uniform_random_mask(image_size=384, acc=6, acs_lines=24)
 
-    get_uniform_random_mask(image_size=256, acc = 5, acs_lines=1)
-    # cartesian_mask((256,250), 5, 1)
-    # get_cartesian_mask(acc=6, acs_lines=10, image_size=192)
+
 if __name__ == '__main__':
     sys.exit(main())

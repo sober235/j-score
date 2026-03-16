@@ -1,7 +1,6 @@
 #!/bin/bash
-# sh test_fastMRI.sh "vp"
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
 
 
 if [ "$1" = "vp" ]

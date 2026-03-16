@@ -41,8 +41,8 @@ class NCSNpp(nn.Module):
         self.act = act = get_act(config)
         self.register_buffer('sigmas', torch.tensor(model_utils.get_sigmas(config)))
 
-        self.nf = nf = config.model.nf # 128
-        ch_mult = config.model.ch_mult # (1, 1, 2, 2, 2, 2, 2)
+        self.nf = nf = config.model.nf
+        ch_mult = config.model.ch_mult
         self.num_res_blocks = num_res_blocks = config.model.num_res_blocks
         self.attn_resolutions = attn_resolutions = config.model.attn_resolutions
         dropout = config.model.dropout
@@ -51,7 +51,7 @@ class NCSNpp(nn.Module):
         self.all_resolutions = all_resolutions = [
             config.data.image_size // (2 ** i) for i in range(num_resolutions)]
 
-        self.conditional = conditional = config.model.conditional  # noise-conditional
+        self.conditional = conditional = config.model.conditional
         fir = config.model.fir
         fir_kernel = config.model.fir_kernel
         self.skip_rescale = skip_rescale = config.model.skip_rescale
@@ -59,7 +59,7 @@ class NCSNpp(nn.Module):
         self.progressive = progressive = config.model.progressive.lower()
         self.progressive_input = progressive_input = config.model.progressive_input.lower()
         self.embedding_type = embedding_type = config.model.embedding_type.lower()
-        init_scale = config.model.init_scale # 0
+        init_scale = config.model.init_scale
         assert progressive in ['none', 'output_skip', 'residual']
         assert progressive_input in ['none', 'input_skip', 'residual']
         assert embedding_type in ['fourier', 'positional']
@@ -67,26 +67,24 @@ class NCSNpp(nn.Module):
         combiner = functools.partial(Combine, method=combine_method)
 
         modules = []
-        # timestep/noise_level embedding; only for continuous training
         if embedding_type == 'fourier':
-            # Gaussian Fourier features embeddings.
             assert config.training.continuous, "Fourier features are only used for continuous training."
 
             modules.append(layerspp.GaussianFourierProjection(
                         embedding_size=nf, scale=config.model.fourier_scale))
-            embed_dim = 2 * nf 
+            embed_dim = 2 * nf
 
         elif embedding_type == 'positional':
-            embed_dim = nf 
+            embed_dim = nf
 
         else:
             raise ValueError(f'embedding type {embedding_type} unknown.')
 
         if conditional:
-            modules.append(nn.Linear(embed_dim, nf * 4)) # 128 → 512
+            modules.append(nn.Linear(embed_dim, nf * 4))
             modules[-1].weight.data = default_initializer()(modules[-1].weight.shape)
             nn.init.zeros_(modules[-1].bias)
-            modules.append(nn.Linear(nf * 4, nf * 4)) # 512 → 512
+            modules.append(nn.Linear(nf * 4, nf * 4))
             modules[-1].weight.data = default_initializer()(modules[-1].weight.shape)
             nn.init.zeros_(modules[-1].bias)
 
@@ -135,23 +133,21 @@ class NCSNpp(nn.Module):
         else:
             raise ValueError(f'resblock type {resblock_type} unrecognized.')
 
-        # Downsampling block
-        channels = config.data.num_channels # num_channel:8
+        channels = config.data.num_channels
         if progressive_input != 'none':
             input_pyramid_ch = channels
 
-        modules.append(conv3x3(channels, nf))  # 8 → 128
+        modules.append(conv3x3(channels, nf))
         hs_c = [nf]
 
         in_ch = nf
         for i_level in range(num_resolutions):
-            # Residual blocks for this resolution
             for i_block in range(num_res_blocks):
                 out_ch = nf * ch_mult[i_level]
                 modules.append(ResnetBlock(in_ch=in_ch, out_ch=out_ch))
                 in_ch = out_ch
 
-                if all_resolutions[i_level] in attn_resolutions: # 当img_size=192x192, 网络训练的过程这里是没有16，当img_size=256x256时候，网络这里多了一个16
+                if all_resolutions[i_level] in attn_resolutions:
                     modules.append(AttnBlock(channels=in_ch))
                 hs_c.append(in_ch)
 
@@ -179,7 +175,6 @@ class NCSNpp(nn.Module):
         modules.append(ResnetBlock(in_ch=in_ch))
 
         pyramid_ch = 0
-        # Upsampling block
         for i_level in reversed(range(num_resolutions)):
             for i_block in range(num_res_blocks + 1):
                 out_ch = nf * ch_mult[i_level]
@@ -234,18 +229,15 @@ class NCSNpp(nn.Module):
 
         self.all_modules = nn.ModuleList(modules)
 
-    def forward(self, x, time_cond): # x: 1*8*191*191, time_cond,    输入：扰动后数据，时间t 
-        # timestep/noise_level embedding; only for continuous training
+    def forward(self, x, time_cond):
         modules = self.all_modules
         m_idx = 0
         if self.embedding_type == 'fourier':
-            # Gaussian Fourier features embeddings.
             used_sigmas = time_cond
-            temb = modules[m_idx](torch.log(used_sigmas)) # 1 x 256
+            temb = modules[m_idx](torch.log(used_sigmas))
             m_idx += 1
 
         elif self.embedding_type == 'positional':
-            # Sinusoidal positional embeddings.
             timesteps = time_cond
             used_sigmas = self.sigmas[time_cond.long()]
             temb = layers.get_timestep_embedding(timesteps, self.nf)
@@ -253,31 +245,28 @@ class NCSNpp(nn.Module):
         else:
             raise ValueError(f'embedding type {self.embedding_type} unknown.')
 
-        if self.conditional: # True
-            temb = modules[m_idx](temb) # temb->1x512,  
+        if self.conditional:
+            temb = modules[m_idx](temb)
             m_idx += 1
-            temb = modules[m_idx](self.act(temb))  # 1x512
+            temb = modules[m_idx](self.act(temb))
             m_idx += 1
         else:
             temb = None
 
-        if not self.config.data.centered: 
-            # If input data is in [0, 1]
-            x = 2 * x - 1. # norm data to [-1,1]
+        if not self.config.data.centered:
+            x = 2 * x - 1.
 
-        # Downsampling block   
         input_pyramid = None
         if self.progressive_input != 'none':
-            input_pyramid = x # x: 1x8x191x191
+            input_pyramid = x
 
-        hs = [modules[m_idx](x)]  # weight: [128, 2, 3, 3]  hs:1*128*191*191
+        hs = [modules[m_idx](x)]
         m_idx += 1
         for i_level in range(self.num_resolutions):
-            # Residual blocks for this resolution
             for i_block in range(self.num_res_blocks):
-                h = modules[m_idx](hs[-1], temb) # 1*128*191*191    temb:1*512
+                h = modules[m_idx](hs[-1], temb)
                 m_idx += 1
-                if h.shape[-1] in self.attn_resolutions: # [0]
+                if h.shape[-1] in self.attn_resolutions:
                     h = modules[m_idx](h)
                     m_idx += 1
 
@@ -288,13 +277,12 @@ class NCSNpp(nn.Module):
                     h = modules[m_idx](hs[-1])
                     m_idx += 1
                 else:
-                    h = modules[m_idx](hs[-1], temb) # 1*128*95*95    temb:1*512
+                    h = modules[m_idx](hs[-1], temb)
                     m_idx += 1
 
-                # debug
                 if self.progressive_input == 'input_skip':
-                    input_pyramid = self.pyramid_downsample(input_pyramid) # 1*8*95*95
-                    h = modules[m_idx](input_pyramid, h) # 1*128*95*95
+                    input_pyramid = self.pyramid_downsample(input_pyramid)
+                    h = modules[m_idx](input_pyramid, h)
                     m_idx += 1
 
                 elif self.progressive_input == 'residual':
@@ -308,21 +296,20 @@ class NCSNpp(nn.Module):
 
                 hs.append(h)
 
-        h = hs[-1] # 1*256*2*2
-        h = modules[m_idx](h, temb) # 1*256*2*2
+        h = hs[-1]
+        h = modules[m_idx](h, temb)
         m_idx += 1
         h = modules[m_idx](h)
         m_idx += 1
-        h = modules[m_idx](h, temb) # 1*256*2*2
+        h = modules[m_idx](h, temb)
         m_idx += 1
 
         pyramid = None
 
-        # Upsampling block
         for i_level in reversed(range(self.num_resolutions)):
             for i_block in range(self.num_res_blocks + 1):
                 tmp = hs.pop()
-                h = modules[m_idx](torch.cat([h, tmp], dim=1), temb) # h: 1*256*4*4    tmp: 1*256*5*5     tmp:1*512   这里有问题？？
+                h = modules[m_idx](torch.cat([h, tmp], dim=1), temb)
                 m_idx += 1
 
             if h.shape[-1] in self.attn_resolutions:
@@ -387,7 +374,5 @@ class NCSNpp(nn.Module):
             if self.config.data.dataset_name != "t1rho":
                 used_sigmas = used_sigmas.reshape(
                     (x.shape[0], *([1] * len(x.shape[1:]))))
-            # debug
-            # print(f'used_sigmas: {used_sigmas.shape}')
             h = h / used_sigmas
         return h

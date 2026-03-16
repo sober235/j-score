@@ -48,9 +48,7 @@ class ConditionalBatchNorm2d(nn.Module):
         self.bn = nn.BatchNorm2d(num_features, affine=False)
         if self.bias:
             self.embed = nn.Embedding(num_classes, num_features * 2)
-            # Initialise scale at N(1, 0.02)
             self.embed.weight.data[:, :num_features].uniform_()
-            # Initialise bias at 0
             self.embed.weight.data[:, num_features:].zero_()
         else:
             self.embed = nn.Embedding(num_classes, num_features)
@@ -77,9 +75,7 @@ class ConditionalInstanceNorm2d(nn.Module):
             num_features, affine=False, track_running_stats=False)
         if bias:
             self.embed = nn.Embedding(num_classes, num_features * 2)
-            # Initialise scale at N(1, 0.02)
             self.embed.weight.data[:, :num_features].uniform_()
-            # Initialise bias at 0
             self.embed.weight.data[:, num_features:].zero_()
         else:
             self.embed = nn.Embedding(num_classes, num_features)
@@ -137,9 +133,7 @@ class ConditionalNoneNorm2d(nn.Module):
         self.bias = bias
         if bias:
             self.embed = nn.Embedding(num_classes, num_features * 2)
-            # Initialise scale at N(1, 0.02)
             self.embed.weight.data[:, :num_features].uniform_()
-            # Initialise bias at 0
             self.embed.weight.data[:, num_features:].zero_()
         else:
             self.embed = nn.Embedding(num_classes, num_features)
@@ -204,9 +198,7 @@ class ConditionalInstanceNorm2dPlus(nn.Module):
             num_features, affine=False, track_running_stats=False)
         if bias:
             self.embed = nn.Embedding(num_classes, num_features * 3)
-            # Initialise scale at N(1, 0.02)
             self.embed.weight.data[:, :2 * num_features].normal_(1, 0.02)
-            # Initialise bias at 0
             self.embed.weight.data[:, 2 * num_features:].zero_()
         else:
             self.embed = nn.Embedding(num_classes, 2 * num_features)

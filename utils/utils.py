@@ -12,23 +12,17 @@ import logging
 
 def init_seeds(seed=0):
     np.random.seed(seed)
-    torch.manual_seed(seed)  # sets the seed for generating random numbers.
-    # Sets the seed for generating random numbers for the current GPU. It’s safe to call this function if CUDA is not available; in that case, it is silently ignored.
+    torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
-    # Sets the seed for generating random numbers on all GPUs. It’s safe to call this function if CUDA is not available; in that case, it is silently ignored.
     torch.cuda.manual_seed_all(seed)
 
     if seed == 0:
-        torch.backends.cudnn.deterministic = True  # 固定卷积算法, 设为True会导致卷积变慢
+        torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
 
 def save_mat(save_dict, variable, file_name, index=0, normalize=True):
-    # variable = variable.cpu().detach().numpy()
     if normalize:
-        # variable_abs = np.absolute(variable)
-        # max = np.max(variable_abs)
-        # variable = variable / max
         variable = normalize_complex(variable)
     variable = variable.cpu().detach().numpy()
     file = os.path.join(save_dict, str(file_name) +
@@ -104,7 +98,6 @@ def normalize_complex(img):
 def get_data_scaler(config):
     """Data normalizer. Assume data are always in [0, 1]."""
     if config.data.centered:
-        # Rescale to [-1, 1]
         return lambda x: x * 2. - 1.
     else:
         return lambda x: x
@@ -113,7 +106,6 @@ def get_data_scaler(config):
 def get_data_inverse_scaler(config):
     """Inverse data normalizer."""
     if config.data.centered:
-        # Rescale [-1, 1] to [0, 1]
         return lambda x: (x + 1.) / 2.
     else:
         return lambda x: x
@@ -140,21 +132,6 @@ def get_mask(config, caller):
     mask = torch.from_numpy(mask).to(config.device)
 
     return mask
-# def get_mask(config, caller):
-#     if caller == 'sde':
-#         if config.training.mask_type == 'low_frequency':
-#             mask_file = 'mask/' +  config.training.mask_type + "_acs" + config.training.acc + '.mat'
-#         else:
-#             mask_file = 'mask_acs20/' +  config.training.mask_type + "_acc" + config.training.acc + '.mat'
-#     elif caller == 'sample':
-#         mask_file = 'mask_acs18/' +  config.sampling.mask_type + "_acc" + config.sampling.acc + '.mat'
-#     mask = scio.loadmat(mask_file)['mask']
-#     mask = mask.astype(np.complex128)
-#     mask = np.expand_dims(mask, axis=0)
-#     mask = np.expand_dims(mask, axis=0)
-#     mask = torch.from_numpy(mask).to(config.device)
-
-#     return mask
 
 
 def ifftshift(x, axes=None):
@@ -277,9 +254,9 @@ def IFFT2c(x):
 def ifftc_1d(x):
     nb, nc, nt, nx, ny = np.shape(x)
     x = np.fft.ifftshift(x, axes=0)
-    x = np.transpose(x, [1,2,3,4,0]) # nc, t, nx, ny, nb
-    x = np.fft.ifft(x, axis=-1) 
-    x = np.transpose(x, [4,0,1,2,3]) # nb, nc, t, nx, ny
+    x = np.transpose(x, [1,2,3,4,0])
+    x = np.fft.ifft(x, axis=-1)
+    x = np.transpose(x, [4,0,1,2,3])
     x = x * np.math.sqrt(nb)
 
 def ifftyc(x):
@@ -433,8 +410,8 @@ def Emat_xyt_complex(b, inv, csm, mask):
                 x = ifft2c_2d(x)
             else:
                 x = ifft2c(x)
-            x = x*torch.conj(csm) 
-            x = torch.sum(x, 1) # 1x4x192x192
+            x = x*torch.conj(csm)
+            x = torch.sum(x, 1)
             x = torch.unsqueeze(x, 1)
 
         else:
@@ -532,13 +509,6 @@ def TV(x, norm='L1'):
 
 
 def restore_checkpoint(ckpt_dir, state, device):
-    # if not tf.io.gfile.exists(ckpt_dir):
-    #     tf.io.gfile.makedirs(os.path.dirname(ckpt_dir))
-    #     logging.warning(f"No checkpoint found at {ckpt_dir}. "
-    #                     f"Returned the same state as input")
-    #     return state
-    # else:
-
     loaded_state = torch.load(ckpt_dir, map_location=device)
     state['optimizer'].load_state_dict(loaded_state['optimizer'])
     state['model'].load_state_dict(loaded_state['model'], strict=False)

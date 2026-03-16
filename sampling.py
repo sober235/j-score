@@ -94,8 +94,7 @@ def get_sampling_fn(config, sde, shape, inverse_scaler, eps, atb_mask, train_mas
         trailing dimensions matching `shape`.
     """
 
-    sampler_name = config.sampling.method # 采样方式
-    # Probability flow ODE sampling with black-box ODE solvers
+    sampler_name = config.sampling.method
     if sampler_name.lower() == 'ode':
         sampling_fn = get_ode_sampler(sde=sde,
                                       shape=shape,
@@ -103,15 +102,14 @@ def get_sampling_fn(config, sde, shape, inverse_scaler, eps, atb_mask, train_mas
                                       denoise=config.sampling.noise_removal,
                                       eps=eps,
                                       device=config.device)
-    # Predictor-Corrector sampling. Predictor-only and Corrector-only samplers are special cases.
     elif sampler_name.lower() == 'pc':
-        predictor = get_predictor(config.sampling.predictor.lower()) # sampling.predictor = 'reverse_diffusion'
-        corrector = get_corrector(config.sampling.corrector.lower()) # sampling.corrector = 'langevin'
+        predictor = get_predictor(config.sampling.predictor.lower())
+        corrector = get_corrector(config.sampling.corrector.lower())
         sampling_fn = get_pc_sampler(config=config,
                                      sde=sde,
                                      shape=shape,
-                                     predictor=predictor, # 'reverse_diffusion'  
-                                     corrector=corrector, # 'langevin'
+                                     predictor=predictor,
+                                     corrector=corrector,
                                      inverse_scaler=inverse_scaler,
                                      snr=config.sampling.snr,
                                      corrector_mse=config.sampling.corrector_mse,
@@ -136,7 +134,6 @@ class Predictor(abc.ABC):
     def __init__(self, sde, score_fn, atb_mask, train_mask, probability_flow=False):
         super().__init__()
         self.sde = sde
-        # Compute the reverse SDE/ODE
         self.rsde = sde.reverse(score_fn, probability_flow)
         self.score_fn = score_fn
         self.atb_mask = atb_mask
@@ -157,7 +154,7 @@ class Predictor(abc.ABC):
         pass
 
 
-class Corrector(abc.ABC): # abc: 抽象基类，为子类定义共有的API
+class Corrector(abc.ABC):
     """The abstract class for a corrector algorithm."""
 
     def __init__(self, sde, score_fn, atb_mask, train_mask, snr, corrector_mse, sampling_fft, n_steps):
@@ -195,7 +192,7 @@ class EulerMaruyamaPredictor(Predictor):
         if isinstance(self.sde, sde_lib.MSSDE):
             x, x_mean = self.rsde.sde(x, t, atb, csm, self.atb_mask)
         else:
-            dt = -1. / self.rsde.N # 就是在离散化，就是delta t, reverse diffusion的dt在beta里
+            dt = -1. / self.rsde.N
             z = torch.randn_like(x)
             drift, diffusion = self.rsde.sde(x, t, atb, csm, self.atb_mask)
             x_mean = x + drift * dt
@@ -203,17 +200,17 @@ class EulerMaruyamaPredictor(Predictor):
         return x, x_mean
 
 
-@register_predictor(name='reverse_diffusion') # 这里才是执行reverse diffusion
-class ReverseDiffusionPredictor(Predictor): # 
+@register_predictor(name='reverse_diffusion')
+class ReverseDiffusionPredictor(Predictor):
     def __init__(self, sde, score_fn, atb_mask, train_mask, probability_flow=False):
         super().__init__(sde, score_fn, atb_mask, train_mask, probability_flow)
 
     def update_fn(self, x, t, atb, csm):
-        if isinstance(self.sde, sde_lib.MSSDE): # 这里？？？
+        if isinstance(self.sde, sde_lib.MSSDE):
             z = torch.randn_like(x)
             x, x_mean = self.rsde.discretize(x, t, z, atb, csm, self.atb_mask)
         else:
-            f, G = self.rsde.discretize(x, t, atb, csm, self.atb_mask) # 这里的f包含宋飏SDE式子（46）中f_i + 1 -G*G^H*S_θ
+            f, G = self.rsde.discretize(x, t, atb, csm, self.atb_mask)
             z = torch.randn_like(x)
             x_mean = x - f
             x = x_mean + G[:, None, None, None] * z
@@ -229,7 +226,6 @@ class NonePredictor(Predictor):
 
     def update_fn(self, x, t, atb, csm):
         return x, x
-
 
 @register_corrector(name='langevin')
 class LangevinCorrector(Corrector):
@@ -254,27 +250,21 @@ class LangevinCorrector(Corrector):
             timestep = (t * (sde.N - 1) / sde.T).long()
             alpha = sde.alphas.to(t.device)[timestep]
         else:
-            alpha = torch.ones_like(t) # 返回和输入大小相同的数组
-        for i in range(n_steps): # 对应宋飏SDE中Alg.4 M循环，也就是Corrector
-            meas_grad = Emat_xyt_T1rho(x, False, csm, self.atb_mask) - c2r(atb) # atb: 32x4x192x192
+            alpha = torch.ones_like(t)
+        for i in range(n_steps):
+            meas_grad = Emat_xyt_T1rho(x, False, csm, self.atb_mask) - c2r(atb)
             meas_grad = Emat_xyt_T1rho(meas_grad, True, csm, self.atb_mask)
-            grad = score_fn(x, t) # 这里打印“time_step: tensor([348.],device='cuda:0')”
-            meas_grad /= torch.norm(meas_grad) # 对应Robust MRI 式（4）中分母系数
+            grad = score_fn(x, t)
+            meas_grad /= torch.norm(meas_grad)
             meas_grad *= torch.norm(grad)
-            meas_grad *= corrector_mse         # 到这里还是操作公式（4）中分母
+            meas_grad *= corrector_mse
 
-            noise = torch.randn_like(x)        # 对应宋飏SDE中alg4--->z
+            noise = torch.randn_like(x)
             grad_norm = torch.norm(grad.reshape(grad.shape[0], -1), dim=-1).mean()
             noise_norm = torch.norm(noise.reshape(noise.shape[0], -1), dim=-1).mean()
             step_size = (target_snr * noise_norm / grad_norm) ** 2 * 2 * alpha
-            #--------Lcc modify-----------#
             x_mean = x + step_size[:,  None, None, None] * (grad - meas_grad)
             x = x_mean + torch.sqrt(step_size * 2)[:, None, None, None] * noise
-
-            # # 这里为了测试胶质瘤数据添加 corrector loop
-            # x = x.type(torch.FloatTensor).to(x_mean.device)
-            # x_mean = x_mean.type(torch.FloatTensor).to(x.device)
-            # # End
 
         return x, x_mean
 
@@ -295,7 +285,6 @@ def shared_predictor_update_fn(x, t, atb, csm, atb_mask, train_mask, sde, model,
     score_fn = mutils.get_score_fn(
         sde, model, train=False, continuous=continuous)
     if predictor is None:
-        # Corrector-only sampler
         predictor_obj = NonePredictor(sde, score_fn, atb_mask, train_mask, probability_flow)
     else:
         predictor_obj = predictor(sde, score_fn, atb_mask, train_mask, probability_flow)
@@ -307,7 +296,6 @@ def shared_corrector_update_fn(x, t, atb, csm, atb_mask, train_mask, sde, model,
     score_fn = mutils.get_score_fn(
         sde, model, train=False, continuous=continuous)
     if corrector is None:
-        # Predictor-only sampler
         corrector_obj = NoneCorrector(sde, score_fn, atb_mask, train_mask, snr, corrector_mse, sampling_fft, n_steps)
     else:
         corrector_obj = corrector(sde, score_fn, atb_mask, train_mask, snr, corrector_mse, sampling_fft, n_steps)
@@ -336,7 +324,6 @@ def get_pc_sampler(config, sde, shape, predictor, corrector, inverse_scaler, snr
     Returns:
       A sampling function that returns samples and the number of function evaluations during sampling.
     """
-    # Create predictor & corrector update functions
     predictor_update_fn = functools.partial(shared_predictor_update_fn,
                                             sde=sde,
                                             atb_mask=atb_mask,
@@ -364,42 +351,29 @@ def get_pc_sampler(config, sde, shape, predictor, corrector, inverse_scaler, snr
           Samples, number of function evaluations.
         """
         with torch.no_grad():
-            # Initial sample
             if isinstance(sde, sde_lib.MSSDE):
                 z = sde.prior_sampling(shape).to(device)
                 if config.model.matrix:
-                    # 初值就是欠采样的图 + 高频噪声
-                    # x = atb_to_image + c2r(ifft2c_2d((1 - atb_mask) * fft2c_2d(r2c(z)))
-                    #                     ).type(torch.FloatTensor).to(device)
-                    # save_mat('.', r2c(atb_to_image), 'atb', 0, True)
-                    # save_mat('.', r2c(x), 'init', 0, True)
-
                     low_fre_img = c2r(Emat_xyt_complex(atb * train_mask, True, r2c(csm), 1.)).type(torch.FloatTensor).to(config.device)
                     x = low_fre_img + c2r(ifft2c_2d((1 - train_mask) * fft2c_2d(r2c(z)))
                                         ).type(torch.FloatTensor).to(device)
                     save_mat('.', r2c(low_fre_img), 'low', 0, True)
                     save_mat('.', r2c(x), 'init', 0, True)
                 else:
-                    # 初值就是欠采样的图 + 噪声
                     x = (atb_to_image + z).type(torch.FloatTensor).to(device)
             else:
-                x = sde.prior_sampling(shape).to(device) # 1x8x192x192 给最大噪声
-            # TODO 1: sde.N 可以设小些
-            timesteps = torch.linspace(sde.T, eps, sde.N, device=device) # （开始，结束，步数）
+                x = sde.prior_sampling(shape).to(device)
+            timesteps = torch.linspace(sde.T, eps, sde.N, device=device)
 
-            # TODO 2
-            for i in range(sde.N): # N = 1000
-            # for i in range(150):
-                t = timesteps[i]  # i = 0, 对应最大时刻
-                vec_t = torch.ones(1, device=t.device) * t  # shape:1x8x192x192
-                x, x_mean = corrector_update_fn(x, vec_t, atb, csm, model=model) # x是上一轮由atb conditional的结果
+            for i in range(sde.N):
+                t = timesteps[i]
+                vec_t = torch.ones(1, device=t.device) * t
+                x, x_mean = corrector_update_fn(x, vec_t, atb, csm, model=model)
                 x = x.type(torch.FloatTensor).to(device)
                 x_mean = x_mean.type(torch.FloatTensor).to(device)
                 x, x_mean = predictor_update_fn(x, vec_t, atb, csm, model=model)
                 x = x.type(torch.FloatTensor).to(device)
                 x_mean = x_mean.type(torch.FloatTensor).to(device)
-                # if (i+1) % 100==0: # 每间隔100步骤保存一次扩散数据
-                #     save_mat('.', r2c(x_mean), 'recon', i, True)
             return inverse_scaler(x_mean if denoise else x), sde.N * (n_steps + 1)
 
     return pc_sampler
@@ -428,7 +402,6 @@ def get_ode_sampler(sde, shape, inverse_scaler,
 
     def denoise_update_fn(model, x):
         score_fn = get_score_fn(sde, model, train=False, continuous=True)
-        # Reverse diffusion predictor for denoising
         predictor_obj = ReverseDiffusionPredictor(
             sde, score_fn, probability_flow=False)
         vec_eps = torch.ones(x.shape[0], device=x.device) * eps
@@ -451,9 +424,7 @@ def get_ode_sampler(sde, shape, inverse_scaler,
           samples, number of function evaluations.
         """
         with torch.no_grad():
-            # Initial sample
             if z is None:
-                # If not represent, sample the latent code from the prior distibution of the SDE.
                 x = sde.prior_sampling(shape).to(device)
             else:
                 x = z
@@ -465,14 +436,12 @@ def get_ode_sampler(sde, shape, inverse_scaler,
                 drift = drift_fn(model, x, vec_t)
                 return to_flattened_numpy(drift)
 
-            # Black-box ODE solver for the probability flow ODE
             solution = integrate.solve_ivp(ode_func, (sde.T, eps), to_flattened_numpy(x),
                                            rtol=rtol, atol=atol, method=method)
             nfe = solution.nfev
             x = torch.tensor(
                 solution.y[:, -1]).reshape(shape).to(device).type(torch.float32)
 
-            # Denoising is equivalent to running one predictor step without adding noise
             if denoise:
                 x = denoise_update_fn(model, x)
 

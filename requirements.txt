@@ -1,0 +1,13 @@
+absl-py>=0.10
+h5py>=3.8
+mat73>=0.60
+ml-collections>=0.1.0
+numpy>=1.23
+scipy>=1.9
+tensorboard>=2.4
+tensorflow>=2.4
+tensorflow-addons>=0.12
+tensorflow-datasets>=3.1
+tensorflow-gan>=2.0.0
+tensorflow-io
+torchvision>=0.15
