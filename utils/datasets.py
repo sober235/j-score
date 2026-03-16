@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from .utils import FFT2c, IFFT2c, Emat_xyt_complex, crop, get_all_files, normalize_complex
+from .utils import FFT2c, IFFT2c, crop
 
 
 def _require_env_path(env_name, description):
@@ -14,67 +14,6 @@ def _require_env_path(env_name, description):
         raise RuntimeError(f"Missing required environment variable {env_name} for {description}.")
     return value
 
-
-class FastMRIKneeDataSet(Dataset):
-    _ENV_KEYS = {
-        'train': ('FASTMRI_TRAIN_KSPACE_DIR', 'FASTMRI_TRAIN_MAPS_DIR'),
-        'test': ('FASTMRI_TEST_KSPACE_DIR', 'FASTMRI_TEST_MAPS_DIR'),
-        'sample': ('FASTMRI_SAMPLE_KSPACE_DIR', 'FASTMRI_SAMPLE_MAPS_DIR'),
-        'datashift': ('FASTMRI_DATASHIFT_KSPACE_DIR', 'FASTMRI_DATASHIFT_MAPS_DIR'),
-    }
-
-    def __init__(self, config, mode):
-        super().__init__()
-        self.config = config
-        if mode not in self._ENV_KEYS:
-            raise NotImplementedError
-
-        kspace_key, maps_key = self._ENV_KEYS[mode]
-        self.kspace_dir = _require_env_path(kspace_key, f'fastMRI {mode} k-space directory')
-        self.maps_dir = _require_env_path(maps_key, f'fastMRI {mode} sensitivity map directory')
-        self.mode = mode
-        self.file_list = get_all_files(self.kspace_dir)
-        self.num_slices = np.zeros((len(self.file_list),), dtype=int)
-
-        for idx, file in enumerate(self.file_list):
-            file_path = os.path.join(self.kspace_dir, file)
-            with h5py.File(file_path, 'r') as data:
-                self.num_slices[idx] = int(np.array(data['kspace']).shape[0])
-
-        self.slice_mapper = np.cumsum(self.num_slices) - 1
-
-    def __getitem__(self, idx):
-        if torch.is_tensor(idx):
-            idx = idx.tolist()
-
-        scan_idx = int(np.where((self.slice_mapper - idx) >= 0)[0][0])
-        slice_idx = int(idx) if scan_idx == 0 else int(idx - self.slice_mapper[scan_idx] + self.num_slices[scan_idx] - 1)
-
-        maps_file = os.path.join(self.maps_dir, os.path.basename(self.file_list[scan_idx]))
-        with h5py.File(maps_file, 'r') as data:
-            maps_idx = np.asarray(data['s_maps'][slice_idx])
-            maps_idx = crop(np.expand_dims(maps_idx, 0), cropx=320, cropy=320)
-            maps = np.squeeze(maps_idx, 0)
-
-        raw_file = os.path.join(self.kspace_dir, os.path.basename(self.file_list[scan_idx]))
-        with h5py.File(raw_file, 'r') as data:
-            ksp_idx = np.asarray(data['kspace'][slice_idx])
-            ksp_idx = crop(IFFT2c(np.expand_dims(ksp_idx, 0)), cropx=320, cropy=320)
-            ksp_idx = np.squeeze(FFT2c(ksp_idx), 0)
-            if self.config.data.normalize_type == 'minmax':
-                img_idx = Emat_xyt_complex(ksp_idx, True, maps, 1)
-                img_idx = self.config.data.normalize_coeff * normalize_complex(img_idx)
-                kspace = np.asarray(Emat_xyt_complex(img_idx, False, maps, 1))
-            elif self.config.data.normalize_type == 'std':
-                minv = np.std(ksp_idx)
-                kspace = np.asarray(ksp_idx / (self.config.data.normalize_coeff * minv))
-            else:
-                raise ValueError(f"Unsupported normalize_type: {self.config.data.normalize_type}")
-
-        return kspace, maps
-
-    def __len__(self):
-        return int(np.sum(self.num_slices))
 
 
 class T1rhoDataSet_h5(Dataset):
@@ -126,9 +65,7 @@ class T1rhoDataSet_h5(Dataset):
 
 def get_dataset(config, mode):
     print('Dataset name:', config.data.dataset_name)
-    if config.data.dataset_name == 'fastMRI_knee':
-        dataset = FastMRIKneeDataSet(config, mode)
-    elif config.data.dataset_name == 't1rho':
+    if config.data.dataset_name == 't1rho':
         dataset = T1rhoDataSet_h5(config, mode)
     else:
         raise ValueError(f"Unknown dataset: {config.data.dataset_name}")
