@@ -1,5 +1,4 @@
 import os
-import sys
 
 import h5py
 import numpy as np
@@ -14,28 +13,6 @@ def _require_env_path(env_name, description):
     if not value:
         raise RuntimeError(f"Missing required environment variable {env_name} for {description}.")
     return value
-
-
-class CardiacDataSet(Dataset):
-    def __init__(self, dataset_name, mode):
-        super().__init__()
-        self.dataset_name = dataset_name
-        if self.dataset_name == 'DYNAMIC_V2':
-            data_root = _require_env_path('CARDIAC_DATA_ROOT', 'CardiacDataSet')
-            self._k = np.load(os.path.join(data_root, f'{mode}_k_newdata_v2.npy')).astype(np.complex64)
-            self._label = np.load(os.path.join(data_root, f'{mode}_label_newdata_v2.npy')).astype(np.complex64)
-        elif self.dataset_name == 'DYNAMIC_V2_MULTICOIL':
-            sys.exit('CardiacDataSet: Need to implement DYNAMIC_V2_MULTICOIL')
-        else:
-            sys.exit('CardiacDataSet: No dataset load')
-
-    def __getitem__(self, index):
-        if self.dataset_name == 'DYNAMIC_V2':
-            return self._k[index, :], self._label[index, :]
-        sys.exit('CardiacDataSet: Need to implement DYNAMIC_V2_MULTICOIL')
-
-    def __len__(self):
-        return self._label.shape[0]
 
 
 class FastMRIKneeDataSet(Dataset):
@@ -61,7 +38,6 @@ class FastMRIKneeDataSet(Dataset):
 
         for idx, file in enumerate(self.file_list):
             file_path = os.path.join(self.kspace_dir, file)
-            print('Input file:', file_path)
             with h5py.File(file_path, 'r') as data:
                 self.num_slices[idx] = int(np.array(data['kspace']).shape[0])
 
@@ -101,18 +77,6 @@ class FastMRIKneeDataSet(Dataset):
         return int(np.sum(self.num_slices))
 
 
-class VascularWallDataSet(Dataset):
-    def __init__(self, config, mode):
-        super().__init__()
-        self.config = config
-
-    def __getitem__(self, idx):
-        raise NotImplementedError
-
-    def __len__(self):
-        raise NotImplementedError
-
-
 class T1rhoDataSet_h5(Dataset):
     def __init__(self, config, mode):
         super().__init__()
@@ -127,7 +91,6 @@ class T1rhoDataSet_h5(Dataset):
             raise NotImplementedError
 
         self.mode = mode
-        print('Input file:', self.kspace_file)
         if self.mode != 'sample':
             with h5py.File(self.kspace_file, 'r') as data:
                 remove_idx = [29, 89, 119, 149, 178, 179, 209, 239, 299, 329, 359, 388, 389]
@@ -141,7 +104,6 @@ class T1rhoDataSet_h5(Dataset):
                 self.kspace = np.array(data['raw'])
                 self.kspace = np.transpose(self.kspace, [2, 3, 4, 0, 1])
 
-        print('Input file:', self.maps_file)
         if self.mode != 'sample':
             with h5py.File(self.maps_file, 'r') as data:
                 self.maps = np.array(data['maps'])[self.keep_idx, ...]
@@ -165,7 +127,6 @@ class T1rhoDataSet_h5(Dataset):
 class T1rhoDataSet_h5_5T(Dataset):
     def __init__(self, config, mode):
         super().__init__()
-        print('****load 5T dataset****')
         self.config = config
         if mode == 'train':
             self.kspace_file = _require_env_path('T1RHO_5T_TRAIN_KSPACE_FILE', 'T1rho 5T training k-space file')
@@ -177,7 +138,6 @@ class T1rhoDataSet_h5_5T(Dataset):
             raise NotImplementedError
 
         self.mode = mode
-        print('Input file:', self.kspace_file)
         if self.mode != 'sample':
             with h5py.File(self.kspace_file, 'r') as data:
                 self.kspace = np.array(data['kspace'])
@@ -187,7 +147,6 @@ class T1rhoDataSet_h5_5T(Dataset):
                 self.kspace = np.array(data['h_kspce'])
                 self.kspace = np.transpose(self.kspace, [2, 3, 4, 0, 1])
 
-        print('Input file:', self.maps_file)
         if self.mode != 'sample':
             with h5py.File(self.maps_file, 'r') as data:
                 self.maps = np.array(data['maps'])
@@ -212,10 +171,6 @@ def get_dataset(config, mode):
     print('Dataset name:', config.data.dataset_name)
     if config.data.dataset_name == 'fastMRI_knee':
         dataset = FastMRIKneeDataSet(config, mode)
-    elif config.data.dataset_name == 'Cardiac':
-        dataset = CardiacDataSet(config.data.dataset_name, mode)
-    elif config.data.dataset_name == 'VWI':
-        dataset = VascularWallDataSet(config.data.dataset_name, mode)
     elif config.data.dataset_name == 't1rho':
         dataset = T1rhoDataSet_h5(config, mode)
     elif config.data.dataset_name == 't1rho_5T':

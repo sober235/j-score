@@ -143,7 +143,6 @@ def get_score_fn(sde, model, train=False, continuous=False):
     def score_fn(x, t):
         if continuous:
             labels = sde.marginal_prob(torch.zeros_like(x), t)[1]
-            print('time_step:', labels)
         else:
             labels = sde.T - t
             labels *= sde.N - 1

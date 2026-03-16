@@ -31,18 +31,6 @@ def save_mat(save_dict, variable, file_name, index=0, normalize=True):
     scio.savemat(file, datadict)
 
 
-def hfssde_save_mat(config, variable, variable_name='recon', normalize=True):
-    if normalize:
-        variable = normalize_complex(variable)
-    variable = variable.cpu().detach().numpy()
-    save_dict = config.sampling.folder
-    file_name = config.training.sde + '_acc' + config.sampling.acc + '_acs' + config.sampling.acs \
-                    + '_epoch' + str(config.sampling.ckpt)
-    file = os.path.join(save_dict, str(file_name) + '.mat')
-    datadict = {variable_name: np.squeeze(variable)}
-    scio.savemat(file, datadict)
-
-
 def get_all_files(folder, pattern='*'):
     files = [x for x in glob.iglob(os.path.join(folder, pattern))]
     return sorted(files)
@@ -59,14 +47,6 @@ def dict2namespace(config):
     return namespace
 
 
-def to_tensor(x):
-    re = np.real(x)
-    im = np.imag(x)
-    x = np.concatenate([re, im], 1)
-    del re, im
-    return torch.from_numpy(x)
-
-
 def crop(img, cropx, cropy):
     nb, c, y, x = img.shape
     startx = x // 2 - cropx // 2
@@ -78,13 +58,6 @@ def normalize(img):
     """ Normalize img in arbitrary range to [0, 1] """
     img -= torch.min(img)
     img /= torch.max(img)
-    return img
-
-
-def normalize_np(img):
-    """ Normalize img in arbitrary range to [0, 1] """
-    img -= np.min(img)
-    img /= np.max(img)
     return img
 
 
@@ -149,7 +122,7 @@ def ifftshift(x, axes=None):
 def fftshift(x, axes=None):
     assert torch.is_tensor(x) == True
     if axes is None:
-        axes = tuple(range(x.ndim()))
+        axes = tuple(range(x.ndim))
         shift = [dim // 2 for dim in x.shape]
     elif isinstance(axes, int):
         shift = x.shape[axes] // 2
@@ -250,59 +223,6 @@ def IFFT2c(x):
     x = np.fft.ifft(x, axis=-1)
     x = np.fft.fftshift(x, axes=3)*np.math.sqrt(ny)
     return x
-
-def ifftc_1d(x):
-    nb, nc, nt, nx, ny = np.shape(x)
-    x = np.fft.ifftshift(x, axes=0)
-    x = np.transpose(x, [1,2,3,4,0])
-    x = np.fft.ifft(x, axis=-1)
-    x = np.transpose(x, [4,0,1,2,3])
-    x = x * np.math.sqrt(nb)
-
-def ifftyc(x):
-    device = x.device
-    nb, nc, nx, ny = x.size()
-    ny = torch.Tensor([ny]).to(device)
-    nx = torch.Tensor([nx]).to(device)
-    x = ifftshift(x, axes=3)
-    x = FFT.ifft(x)
-    x =  torch.mul(fftshift(x, axes=3), torch.sqrt(ny))
-    return x
-
-def ifftxc(x):
-    device = x.device
-    nb, nc, nx, ny = x.size()
-    ny = torch.Tensor([ny]).to(device)
-    nx = torch.Tensor([nx]).to(device)
-    x = ifftshift(x, axes=2)
-    x = torch.transpose(x, 2, 3)
-    x = FFT.ifft(x)
-    x = torch.transpose(x, 2, 3)
-    x = torch.mul(fftshift(x, axes=2), torch.sqrt(nx))
-    return x
-
-def ifftyc_5(x):
-    device = x.device
-    nb, nc, nt, nx, ny = x.size()
-    ny = torch.Tensor([ny]).to(device)
-    nx = torch.Tensor([nx]).to(device)
-    x = ifftshift(x, axes=4)
-    x = FFT.ifft(x)
-    x =  torch.mul(fftshift(x, axes=4), torch.sqrt(ny))
-    return x
-
-def ifftxc_5(x):
-    device = x.device
-    nb, nc, nt, nx, ny = x.size()
-    ny = torch.Tensor([ny]).to(device)
-    nx = torch.Tensor([nx]).to(device)
-    x = ifftshift(x, axes=3)
-    x = torch.transpose(x, 3, 4)
-    x = FFT.ifft(x)
-    x = torch.transpose(x, 3, 4)
-    x = torch.mul(fftshift(x, axes=3), torch.sqrt(nx))
-    return x    
-
 
 def Emat_xyt(b, inv, csm, mask):
     if csm == None:
@@ -472,40 +392,9 @@ def c2r(x):
     return x
 
 
-def sos(x):
-    xr, xi = torch.chunk(x, 2, 1)
-    x = torch.pow(torch.abs(xr), 2)+torch.pow(torch.abs(xi), 2)
-    x = torch.sum(x, dim=1)
-    x = torch.pow(x, 0.5)
-    x = torch.unsqueeze(x, 1)
-    return x
-
-
 def Abs(x):
     x = r2c(x)
     return torch.abs(x)
-
-
-def l2mean(x):
-    result = torch.mean(torch.pow(torch.abs(x), 2))
-
-    return result
-
-
-def TV(x, norm='L1'):
-    nb, nc, nx, ny = x.size()
-    Dx = torch.cat([x[:, :, 1:nx, :], x[:, :, 0:1, :]], 2)
-    Dy = torch.cat([x[:, :, :, 1:ny], x[:, :, :, 0:1]], 3)
-    Dx = Dx - x
-    Dy = Dy - x
-    tv = 0
-    if norm == 'L1':
-        tv = torch.mean(torch.abs(Dx)) + torch.mean(torch.abs(Dy))
-    elif norm == 'L2':
-        Dx = Dx * Dx
-        Dy = Dy * Dy
-        tv = torch.mean(Dx) + torch.mean(Dy)
-    return tv
 
 
 def restore_checkpoint(ckpt_dir, state, device):

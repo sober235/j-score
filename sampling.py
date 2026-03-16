@@ -357,8 +357,6 @@ def get_pc_sampler(config, sde, shape, predictor, corrector, inverse_scaler, snr
                     low_fre_img = c2r(Emat_xyt_complex(atb * train_mask, True, r2c(csm), 1.)).type(torch.FloatTensor).to(config.device)
                     x = low_fre_img + c2r(ifft2c_2d((1 - train_mask) * fft2c_2d(r2c(z)))
                                         ).type(torch.FloatTensor).to(device)
-                    save_mat('.', r2c(low_fre_img), 'low', 0, True)
-                    save_mat('.', r2c(x), 'init', 0, True)
                 else:
                     x = (atb_to_image + z).type(torch.FloatTensor).to(device)
             else:

@@ -1,6 +1,5 @@
 """Abstract SDE classes, Reverse SDE, and VE/VP SDEs."""
 import abc
-from ast import Not
 import torch
 import numpy as np
 from utils.utils import *
@@ -264,7 +263,7 @@ class subVPSDE(SDE):
   def marginal_prob(self, x, t):
     log_mean_coeff = -0.25 * t ** 2 * (self.beta_1 - self.beta_0) - 0.5 * t * self.beta_0
     mean = torch.exp(log_mean_coeff)[:, None, None, None] * x
-    std = 1 - torch.exp(2. * log_mean_coeff)
+    std = torch.sqrt(1. - torch.exp(2. * log_mean_coeff))
     return mean, std
 
   def prior_sampling(self, shape):

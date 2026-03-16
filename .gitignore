@@ -9,3 +9,6 @@ results/
 *.log
 .vscode/
 .DS_Store
+PUBLIC_RELEASE_PLAN.md
+plans/
+.ccb/

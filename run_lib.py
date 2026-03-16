@@ -11,7 +11,6 @@ import torch
 from absl import flags
 from torch.utils import tensorboard
 
-import likelihood
 import losses
 import sampling
 import sde_lib
@@ -33,8 +32,6 @@ def _load_sampling_mask():
     atb_mask = np.squeeze(atb_mask[:, 0:1, :, :, :])
     atb_mask = np.squeeze(atb_mask)
     atb_mask = np.tile(atb_mask, (1, 1, 1, 1))
-    print('Sampling mask:', mask_path)
-    print('****atb_mask shape*****', atb_mask.shape)
     return torch.from_numpy(atb_mask)
 
 
@@ -105,9 +102,6 @@ def train(config, workdir):
                                        reduce_mean=reduce_mean, continuous=continuous,
                                        likelihood_weighting=likelihood_weighting)
 
-    if config.training.snapshot_sampling:
-        pass
-
     logging.info("Starting training loop at step %d." % (initial_step,))
 
     for epoch in range(start_epoch, config.training.epochs):
@@ -138,14 +132,9 @@ def train(config, workdir):
                 writer.add_scalar(
                     "training_loss", scalar_value=loss, global_step=global_step)
 
-            if step % config.training.eval_freq == 0:
-                pass
-
         if (epoch + 1) % 5 == 0:
             save_checkpoint(os.path.join(checkpoint_dir, f'checkpoint_{epoch + 1}.pth'), state)
 
-        if config.training.snapshot_sampling and (epoch + 1) % config.training.snapshot_freq == 0:
-            pass
 
 
 def sample(config, workdir):
@@ -166,29 +155,16 @@ def sample(config, workdir):
     state = restore_checkpoint(ckpt_path, state, device=config.device)
     print("load weights:", ckpt_path)
 
-    if FLAGS.config.sampling.datashift == ' z':
-        SAMPLING_FOLDER_ID = '_'.join([FLAGS.config.sampling.acc, FLAGS.config.sampling.acs, 
+    SAMPLING_FOLDER_ID = '_'.join([FLAGS.config.sampling.acc, FLAGS.config.sampling.acs,
                         FLAGS.config.sampling.mask_type, 'ckpt', str(config.sampling.ckpt),
-                        FLAGS.config.sampling.predictor, 
+                        FLAGS.config.sampling.predictor,
                         FLAGS.config.training.mean_equal,
-                        FLAGS.config.sampling.datashift,
                         FLAGS.config.sampling.fft,
                         str(config.sampling.snr),
                         'predictor_mse', str(FLAGS.config.sampling.mse),
                         'corrector_mse', str(FLAGS.config.sampling.corrector_mse),
                         str(FLAGS.config.data.centered)])
-        test_dl = datasets.get_dataset(config, 'datashift')
-    else:
-        SAMPLING_FOLDER_ID = '_'.join([FLAGS.config.sampling.acc, FLAGS.config.sampling.acs, 
-                            FLAGS.config.sampling.mask_type, 'ckpt', str(config.sampling.ckpt),
-                            FLAGS.config.sampling.predictor, 
-                            FLAGS.config.training.mean_equal,
-                            FLAGS.config.sampling.fft,
-                            str(config.sampling.snr),
-                            'predictor_mse', str(FLAGS.config.sampling.mse),
-                            'corrector_mse', str(FLAGS.config.sampling.corrector_mse),
-                            str(FLAGS.config.data.centered)])
-        test_dl = datasets.get_dataset(config, 'sample')
+    test_dl = datasets.get_dataset(config, 'sample')
     FLAGS.config.sampling.folder = os.path.join(FLAGS.workdir, 'acc' + SAMPLING_FOLDER_ID)
     tf.io.gfile.makedirs(FLAGS.config.sampling.folder)
 
@@ -223,9 +199,7 @@ def sample(config, workdir):
                                 inverse_scaler, sampling_eps, atb_mask, train_mask)
     recon_fin = []
     for index, point in enumerate(test_dl):
-        print('---------------------------------------------')
-        print('---------------- point:', index, '------------------')
-        print('---------------------------------------------')
+        print(f'Processing sample {index + 1}/{len(test_dl)}')
         k0, csm = point
         k0 = k0.to(config.device)
         csm = csm.to(config.device)
@@ -250,9 +224,6 @@ def sample(config, workdir):
         end = time.time()
         elapsed_time = end - begin
         print(f"elapsed time: {elapsed_time} seconds")
-        torch.cuda.synchronize()
-        end_time = time.time()
-        print(end_time)
         recon = r2c(recon)
         recon = recon.unsqueeze(0)
 
