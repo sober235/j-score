@@ -7,7 +7,7 @@
 Official code for the paper "[J-Score: Joint Distribution Learning with Score-based Diffusion for Accelerating T1ρ Mapping](https://ieeexplore.ieee.org/document/11152307)", published in TMI 2025.
 
 
-by Congcong Liu, Yuanyuan Liu, [Chentao Cao](https://scholar.google.com/citations?user=vZPl_oQAAAAJ&hl=en), Jing Cheng, Qingyong Zhu, Tian Zhou, Chen Luo, Yanjie Zhu, Haifeng Wang, [Zhuo-Xu Cui<sup>+</sup>](https://scholar.google.com/citations?user=QZx0xdgAAAAJ&hl=en), and [Dong Liang<sup>+</sup>](https://scholar.google.com/citations?user=3cAJWoIAAAAJ&hl=en)(<sup>+</sup>denotes corresponding author).
+by [Congcong Liu](https://sober235.github.io/), Yuanyuan Liu, [Chentao Cao](https://scholar.google.com/citations?user=vZPl_oQAAAAJ&hl=en), [Jing Cheng](https://scholar.google.com/citations?user=voDu8Y4AAAAJ&hl=zh-CN), [Qingyong Zhu](https://scholar.google.com/citations?user=BjJFSC8AAAAJ&hl=en), Tian Zhou, Chen Luo, [Yanjie Zhu](https://scholar.google.com/citations?user=X2mIoQ4AAAAJ&hl=en), Haifeng Wang, [Zhuo-Xu Cui<sup>+</sup>](https://scholar.google.com/citations?user=QZx0xdgAAAAJ&hl=en), and [Dong Liang<sup>+</sup>](https://scholar.google.com/citations?user=3cAJWoIAAAAJ&hl=en)(<sup>+</sup>denotes corresponding author).
 
 ### Illustration
 ![](img/framework.png)
