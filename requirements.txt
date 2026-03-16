@@ -4,6 +4,7 @@ mat73>=0.60
 ml-collections>=0.1.0
 numpy>=1.23
 scipy>=1.9
+scikit-image>=0.19
 tensorboard>=2.4
 tensorflow>=2.4
 tensorflow-io
